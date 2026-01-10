@@ -1,0 +1,95 @@
+/* Milestone Gantt (QNotes) */
+.cdx-milestone-gantt {
+  margin: 0;
+  position: relative;
+  border: 1px solid var(--mg-border, #bae6fd);
+  background: var(--mg-bg, #f0f9ff);
+  border-radius: 10px;
+  padding: 10px 12px 12px;
+  --mg-accent: #0284c7;
+  --mg-text: #0f172a;
+  --mg-muted: #475569;
+  --mg-chip-bg: #e0f2fe;
+  --mg-chip-border: #7dd3fc;
+}
+
+.cdx-milestone-gantt:before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  border-radius: 10px 0 0 10px;
+  background: var(--mg-accent);
+}
+
+.cdx-milestone-gantt__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.cdx-milestone-gantt__title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--mg-text);
+  white-space: nowrap;
+}
+
+.cdx-milestone-gantt__spacer {
+  flex: 1 1 auto;
+}
+
+.cdx-milestone-gantt__chip {
+  border: 1px solid var(--mg-chip-border);
+  background: var(--mg-chip-bg);
+  color: #075985;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  user-select: none;
+}
+
+.cdx-milestone-gantt__chip.is-active {
+  background: #bae6fd;
+  border-color: var(--mg-accent);
+  color: #0369a1;
+}
+
+.cdx-milestone-gantt__meta {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--mg-muted);
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cdx-milestone-gantt__meta b {
+  color: var(--mg-text);
+  font-weight: 600;
+}
+
+.cdx-milestone-gantt__viewport {
+  width: 100%;
+  overflow: auto;
+  border: 1px solid rgba(2, 132, 199, .18);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.cdx-milestone-gantt__svg {
+  display: block;
+  width: 100%;
+  min-width: 900px; /* 横轴是时间：避免太挤 */
+}
+
+.cdx-milestone-gantt__hint {
+  font-size: 12px;
+  color: var(--mg-muted);
+}
+
