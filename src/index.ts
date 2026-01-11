@@ -147,9 +147,17 @@ export default class MilestoneGantt implements BlockTool {
   private data: MilestoneGanttData;
 
   private wrapper?: HTMLElement;
-  private svgEl?: SVGSVGElement;
+  private svgLeftEl?: SVGSVGElement;
+  private svgRightEl?: SVGSVGElement;
+  private timelineViewportEl?: HTMLElement;
+  private leftInnerEl?: HTMLElement;
   private metaEl?: HTMLElement;
   private loadingEl?: HTMLElement;
+
+  private dayW = 18;
+  private lastItems: MilestoneItem[] = [];
+
+  private removePanZoomListeners?: () => void;
 
   static get isReadOnlySupported() {
     return true;
@@ -233,14 +241,35 @@ export default class MilestoneGantt implements BlockTool {
     header.appendChild(btnRefresh);
     wrap.appendChild(header);
 
-    const viewport = make('div', ['cdx-milestone-gantt__viewport']) as HTMLElement;
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('class', 'cdx-milestone-gantt__svg');
-    svg.setAttribute('viewBox', '0 0 900 260');
-    svg.setAttribute('preserveAspectRatio', 'xMinYMin meet');
-    viewport.appendChild(svg);
-    wrap.appendChild(viewport);
-    this.svgEl = svg as any;
+    const grid = make('div', ['cdx-milestone-gantt__grid']) as HTMLElement;
+
+    const left = make('div', ['cdx-milestone-gantt__left']) as HTMLElement;
+    const leftInner = make('div', ['cdx-milestone-gantt__leftInner']) as HTMLElement;
+    const svgLeft = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svgLeft.setAttribute('class', 'cdx-milestone-gantt__svg cdx-milestone-gantt__svg--left');
+    svgLeft.setAttribute('width', '320');
+    svgLeft.setAttribute('height', '260');
+    leftInner.appendChild(svgLeft);
+    left.appendChild(leftInner);
+    this.svgLeftEl = svgLeft as any;
+    this.leftInnerEl = leftInner;
+
+    const right = make('div', ['cdx-milestone-gantt__right']) as HTMLElement;
+    const timelineViewport = make('div', ['cdx-milestone-gantt__timelineViewport']) as HTMLElement;
+    const svgRight = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svgRight.setAttribute('class', 'cdx-milestone-gantt__svg cdx-milestone-gantt__svg--right');
+    svgRight.setAttribute('width', '600');
+    svgRight.setAttribute('height', '260');
+    timelineViewport.appendChild(svgRight);
+    right.appendChild(timelineViewport);
+    this.svgRightEl = svgRight as any;
+    this.timelineViewportEl = timelineViewport;
+
+    grid.appendChild(left);
+    grid.appendChild(right);
+    wrap.appendChild(grid);
+
+    this.installPanZoom();
 
     const meta = make('div', ['cdx-milestone-gantt__meta']) as HTMLElement;
     this.metaEl = meta;
@@ -306,8 +335,110 @@ export default class MilestoneGantt implements BlockTool {
     if (this.loadingEl) this.loadingEl.textContent = text;
   }
 
+  private installPanZoom() {
+    // 防止重复绑定
+    if (this.removePanZoomListeners) {
+      this.removePanZoomListeners();
+      this.removePanZoomListeners = undefined;
+    }
+    if (!this.timelineViewportEl) return;
+
+    const viewport = this.timelineViewportEl;
+
+    // 同步纵向滚动，让左侧行标题对齐
+    const onScroll = () => {
+      if (!this.leftInnerEl) return;
+      const st = viewport.scrollTop;
+      this.leftInnerEl.style.transform = `translateY(${-st}px)`;
+    };
+
+    let dragging = false;
+    let startX = 0;
+    let startScrollLeft = 0;
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      dragging = true;
+      startX = e.clientX;
+      startScrollLeft = viewport.scrollLeft;
+      viewport.classList.add('is-dragging');
+      try {
+        viewport.setPointerCapture(e.pointerId);
+      } catch (_) {
+        // ignore
+      }
+      e.preventDefault();
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (!dragging) return;
+      const dx = e.clientX - startX;
+      viewport.scrollLeft = startScrollLeft - dx;
+      e.preventDefault();
+    };
+
+    const stopDrag = (e: PointerEvent) => {
+      if (!dragging) return;
+      dragging = false;
+      viewport.classList.remove('is-dragging');
+      try {
+        viewport.releasePointerCapture(e.pointerId);
+      } catch (_) {
+        // ignore
+      }
+      e.preventDefault();
+    };
+
+    const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+
+    const onWheel = (e: WheelEvent) => {
+      // 滚轮缩放时间线（不移动左侧列）
+      if (!this.timelineViewportEl) return;
+      if (!this.lastItems || this.lastItems.length === 0) return;
+      if (!Number.isFinite(e.deltaY) || e.deltaY === 0) return;
+
+      // 以鼠标所在位置为缩放锚点：缩放后尽量保持该日期不“跳走”
+      const rect = viewport.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const oldDayW = this.dayW;
+      const contentX = viewport.scrollLeft + mouseX;
+      const dayAtCursor = contentX / oldDayW;
+
+      const factor = e.deltaY < 0 ? 1.12 : 0.88;
+      const next = clamp(Math.round(oldDayW * factor), 6, 80);
+      if (next === oldDayW) return;
+
+      e.preventDefault();
+
+      this.dayW = next;
+      this.renderChart(this.lastItems);
+
+      // 重新渲染后再恢复 scrollLeft
+      requestAnimationFrame(() => {
+        const newContentX = dayAtCursor * this.dayW;
+        viewport.scrollLeft = newContentX - mouseX;
+      });
+    };
+
+    viewport.addEventListener('scroll', onScroll);
+    viewport.addEventListener('pointerdown', onPointerDown);
+    viewport.addEventListener('pointermove', onPointerMove);
+    viewport.addEventListener('pointerup', stopDrag);
+    viewport.addEventListener('pointercancel', stopDrag);
+    viewport.addEventListener('wheel', onWheel, { passive: false });
+
+    this.removePanZoomListeners = () => {
+      viewport.removeEventListener('scroll', onScroll);
+      viewport.removeEventListener('pointerdown', onPointerDown);
+      viewport.removeEventListener('pointermove', onPointerMove);
+      viewport.removeEventListener('pointerup', stopDrag);
+      viewport.removeEventListener('pointercancel', stopDrag);
+      viewport.removeEventListener('wheel', onWheel as any);
+    };
+  }
+
   private async refresh(): Promise<void> {
-    if (!this.svgEl) return;
+    if (!this.svgLeftEl || !this.svgRightEl) return;
     if (!this.config.queryBlocks) {
       this.setLoading(this.api.i18n.t('未配置 queryBlocks，无法加载数据'));
       this.renderEmptySvg(this.api.i18n.t('未配置数据接口'));
@@ -362,22 +493,43 @@ export default class MilestoneGantt implements BlockTool {
   }
 
   private renderEmptySvg(text: string) {
-    if (!this.svgEl) return;
-    while (this.svgEl.firstChild) this.svgEl.removeChild(this.svgEl.firstChild);
-    const w = 900;
+    if (!this.svgLeftEl || !this.svgRightEl) return;
+
+    const clear = (svg: SVGSVGElement) => {
+      while (svg.firstChild) svg.removeChild(svg.firstChild);
+    };
+    clear(this.svgLeftEl);
+    clear(this.svgRightEl);
+
+    const wLeft = 320;
+    const wRight = 900;
     const h = 260;
-    this.svgEl.setAttribute('viewBox', `0 0 ${w} ${h}`);
-    const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    this.svgLeftEl.setAttribute('width', String(wLeft));
+    this.svgLeftEl.setAttribute('height', String(h));
+    this.svgRightEl.setAttribute('width', String(wRight));
+    this.svgRightEl.setAttribute('height', String(h));
+
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const bg = document.createElementNS(svgNS, 'rect');
+    bg.setAttribute('x', '0');
+    bg.setAttribute('y', '0');
+    bg.setAttribute('width', String(wRight));
+    bg.setAttribute('height', String(h));
+    bg.setAttribute('fill', '#ffffff');
+    this.svgRightEl.appendChild(bg);
+
+    const t = document.createElementNS(svgNS, 'text');
     t.setAttribute('x', String(16));
     t.setAttribute('y', String(28));
     t.setAttribute('fill', '#64748b');
     t.setAttribute('font-size', '13');
     t.textContent = text;
-    this.svgEl.appendChild(t);
+    this.svgRightEl.appendChild(t);
   }
 
   private renderChart(items: MilestoneItem[]) {
-    if (!this.svgEl) return;
+    if (!this.svgLeftEl || !this.svgRightEl) return;
+    this.lastItems = items.slice();
 
     if (this.metaEl) {
       const creator = this.data.creator;
@@ -462,35 +614,77 @@ export default class MilestoneGantt implements BlockTool {
     const leftW = 320;
     const topH = 40;
     const rowH = 22;
-    const dayW = 18;
-    const w = leftW + days.length * dayW + 20;
+    const dayW = this.dayW;
+    const wRight = days.length * dayW + 20;
     const h = topH + rows.length * rowH + 20;
-    this.svgEl.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    this.svgLeftEl.setAttribute('width', String(leftW));
+    this.svgLeftEl.setAttribute('height', String(h));
+    this.svgRightEl.setAttribute('width', String(wRight));
+    this.svgRightEl.setAttribute('height', String(h));
 
-    while (this.svgEl.firstChild) this.svgEl.removeChild(this.svgEl.firstChild);
+    while (this.svgLeftEl.firstChild) this.svgLeftEl.removeChild(this.svgLeftEl.firstChild);
+    while (this.svgRightEl.firstChild) this.svgRightEl.removeChild(this.svgRightEl.firstChild);
 
-    const add = (el: Element) => this.svgEl!.appendChild(el);
     const svgNS = 'http://www.w3.org/2000/svg';
 
+    const addLeft = (el: Element) => this.svgLeftEl!.appendChild(el);
+    const addRight = (el: Element) => this.svgRightEl!.appendChild(el);
+
     // 背景
-    const bg = document.createElementNS(svgNS, 'rect');
-    bg.setAttribute('x', '0');
-    bg.setAttribute('y', '0');
-    bg.setAttribute('width', String(w));
-    bg.setAttribute('height', String(h));
-    bg.setAttribute('fill', '#ffffff');
-    add(bg);
+    const bgLeft = document.createElementNS(svgNS, 'rect');
+    bgLeft.setAttribute('x', '0');
+    bgLeft.setAttribute('y', '0');
+    bgLeft.setAttribute('width', String(leftW));
+    bgLeft.setAttribute('height', String(h));
+    bgLeft.setAttribute('fill', '#ffffff');
+    addLeft(bgLeft);
+
+    const bgRight = document.createElementNS(svgNS, 'rect');
+    bgRight.setAttribute('x', '0');
+    bgRight.setAttribute('y', '0');
+    bgRight.setAttribute('width', String(wRight));
+    bgRight.setAttribute('height', String(h));
+    bgRight.setAttribute('fill', '#ffffff');
+    addRight(bgRight);
+
+    // 左右分隔线
+    const sep = document.createElementNS(svgNS, 'line');
+    sep.setAttribute('x1', String(leftW - 0.5));
+    sep.setAttribute('y1', '0');
+    sep.setAttribute('x2', String(leftW - 0.5));
+    sep.setAttribute('y2', String(h));
+    sep.setAttribute('stroke', 'rgba(15, 23, 42, .08)');
+    addLeft(sep);
+
+    // 左侧表头（项目/人员 + 内容）
+    const headerA = document.createElementNS(svgNS, 'text');
+    headerA.setAttribute('x', '12');
+    headerA.setAttribute('y', '18');
+    headerA.setAttribute('fill', '#64748b');
+    headerA.setAttribute('font-size', '11');
+    headerA.setAttribute('font-weight', '600');
+    headerA.textContent = this.data.viewMode === 'people' ? this.api.i18n.t('人员') : this.api.i18n.t('项目');
+    addLeft(headerA);
+
+    const headerB = document.createElementNS(svgNS, 'text');
+    headerB.setAttribute('x', '130');
+    headerB.setAttribute('y', '18');
+    headerB.setAttribute('fill', '#64748b');
+    headerB.setAttribute('font-size', '11');
+    headerB.setAttribute('font-weight', '600');
+    headerB.textContent = this.api.i18n.t('内容');
+    addLeft(headerB);
 
     // 竖向日网格 + 顶部日期标签（只写每隔一段）
     for (let i = 0; i < days.length; i++) {
-      const x = leftW + i * dayW;
+      const x = i * dayW;
       const line = document.createElementNS(svgNS, 'line');
       line.setAttribute('x1', String(x));
       line.setAttribute('y1', String(topH - 6));
       line.setAttribute('x2', String(x));
       line.setAttribute('y2', String(h - 10));
       line.setAttribute('stroke', 'rgba(2, 132, 199, .10)');
-      add(line);
+      addRight(line);
 
       if (i === 0 || i === days.length - 1 || i % 7 === 0) {
         const t = document.createElementNS(svgNS, 'text');
@@ -500,20 +694,28 @@ export default class MilestoneGantt implements BlockTool {
         t.setAttribute('font-size', '11');
         const ymd = ymdFromKey(days[i]);
         t.textContent = ymd ? ymd.slice(5) : '';
-        add(t);
+        addRight(t);
       }
     }
 
     // 行分隔线
     for (let r = 0; r <= rows.length; r++) {
       const y = topH + r * rowH;
-      const line = document.createElementNS(svgNS, 'line');
-      line.setAttribute('x1', '0');
-      line.setAttribute('y1', String(y));
-      line.setAttribute('x2', String(w));
-      line.setAttribute('y2', String(y));
-      line.setAttribute('stroke', 'rgba(15, 23, 42, .06)');
-      add(line);
+      const lineL = document.createElementNS(svgNS, 'line');
+      lineL.setAttribute('x1', '0');
+      lineL.setAttribute('y1', String(y));
+      lineL.setAttribute('x2', String(leftW));
+      lineL.setAttribute('y2', String(y));
+      lineL.setAttribute('stroke', 'rgba(15, 23, 42, .06)');
+      addLeft(lineL);
+
+      const lineR = document.createElementNS(svgNS, 'line');
+      lineR.setAttribute('x1', '0');
+      lineR.setAttribute('y1', String(y));
+      lineR.setAttribute('x2', String(wRight));
+      lineR.setAttribute('y2', String(y));
+      lineR.setAttribute('stroke', 'rgba(15, 23, 42, .06)');
+      addRight(lineR);
     }
 
     // 左侧标签 + 条条
@@ -536,7 +738,7 @@ export default class MilestoneGantt implements BlockTool {
       label.setAttribute('font-size', isFirstInGroup ? '12' : '11');
       label.setAttribute('font-weight', isFirstInGroup ? '700' : '400');
       label.textContent = isFirstInGroup ? row.group : '·';
-      add(label);
+      addLeft(label);
 
       const sub = document.createElementNS(svgNS, 'text');
       sub.setAttribute('x', '130');
@@ -544,7 +746,7 @@ export default class MilestoneGantt implements BlockTool {
       sub.setAttribute('fill', '#0f172a');
       sub.setAttribute('font-size', '11');
       sub.textContent = row.label.length > 18 ? `${row.label.slice(0, 18)}…` : row.label;
-      add(sub);
+      addLeft(sub);
 
       // bar（一个 row 当前只画一个 item）
       const it = row.items[0];
@@ -553,8 +755,8 @@ export default class MilestoneGantt implements BlockTool {
       if (sKey == null || eKey == null) continue;
       const a = Math.min(sKey, eKey);
       const b = Math.max(sKey, eKey);
-      const sx = leftW + (dayIndex.get(a) ?? 0) * dayW;
-      const ex = leftW + ((dayIndex.get(b) ?? 0) + 1) * dayW;
+      const sx = (dayIndex.get(a) ?? 0) * dayW;
+      const ex = ((dayIndex.get(b) ?? 0) + 1) * dayW;
       const bar = document.createElementNS(svgNS, 'rect');
       bar.setAttribute('x', String(sx));
       bar.setAttribute('y', String(yTop + 4));
@@ -567,7 +769,7 @@ export default class MilestoneGantt implements BlockTool {
       const tip = document.createElementNS(svgNS, 'title');
       tip.textContent = `${it.projectName || ''}\n${it.content || ''}\n${it.startTime} ~ ${it.time}\n${it.people.join('、')}`;
       bar.appendChild(tip);
-      add(bar);
+      addRight(bar);
     }
 
     this.setLoading(this.api.i18n.t(''));

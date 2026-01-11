@@ -11,6 +11,10 @@
   --mg-muted: #475569;
   --mg-chip-bg: #e0f2fe;
   --mg-chip-border: #7dd3fc;
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden; /* 缩放时避免把外层页面撑出横向滚动条 */
 }
 
 .cdx-milestone-gantt:before {
@@ -74,18 +78,61 @@
   font-weight: 600;
 }
 
-.cdx-milestone-gantt__viewport {
+.cdx-milestone-gantt__grid {
   width: 100%;
-  overflow: auto;
   border: 1px solid rgba(2, 132, 199, .18);
   border-radius: 8px;
   background: #ffffff;
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  min-height: 260px;
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden; /* 右侧 SVG 变宽时只允许在 viewport 内滚动 */
+}
+
+.cdx-milestone-gantt__left {
+  width: 320px;
+  overflow: hidden; /* 左侧固定，不出现自己的滚动条 */
+  background: #ffffff;
+  border-right: 1px solid rgba(15, 23, 42, .06);
+  position: relative;
+}
+
+.cdx-milestone-gantt__leftInner {
+  will-change: transform;
+}
+
+.cdx-milestone-gantt__right {
+  min-width: 0;
+  background: #ffffff;
+  overflow: hidden; /* 避免右侧内容溢出撑开 grid */
+}
+
+.cdx-milestone-gantt__timelineViewport {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  cursor: grab;
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+  overscroll-behavior: contain;
+}
+
+.cdx-milestone-gantt__timelineViewport.is-dragging {
+  cursor: grabbing;
+  user-select: none;
 }
 
 .cdx-milestone-gantt__svg {
   display: block;
-  width: 100%;
-  min-width: 900px; /* 横轴是时间：避免太挤 */
+  max-width: none; /* 允许超出容器以触发水平滚动 */
+}
+
+.cdx-milestone-gantt__svg--left {
+  width: 320px;
 }
 
 .cdx-milestone-gantt__hint {
