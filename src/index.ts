@@ -647,6 +647,26 @@ export default class MilestoneGantt implements BlockTool {
     bgRight.setAttribute('fill', '#ffffff');
     addRight(bgRight);
 
+    // 周末底色（周六/周日列淡色背景，用于区分工作日）
+    // 注意：先画背景，再画网格线/条形，避免遮挡内容
+    const weekendFill = 'rgba(148, 163, 184, .14)'; // slate-400, low opacity
+    for (let i = 0; i < days.length; i++) {
+      const ymd = ymdFromKey(days[i]);
+      if (!ymd) continue;
+      const [yy, mm, dd] = ymd.split('-').map(Number);
+      const dow = new Date(yy, mm - 1, dd).getDay(); // 0=Sun ... 6=Sat
+      if (dow !== 0 && dow !== 6) continue;
+
+      const x = i * dayW;
+      const rect = document.createElementNS(svgNS, 'rect');
+      rect.setAttribute('x', String(x));
+      rect.setAttribute('y', '0');
+      rect.setAttribute('width', String(dayW));
+      rect.setAttribute('height', String(h));
+      rect.setAttribute('fill', weekendFill);
+      addRight(rect);
+    }
+
     // 左右分隔线
     const sep = document.createElementNS(svgNS, 'line');
     sep.setAttribute('x1', String(leftW - 0.5));
