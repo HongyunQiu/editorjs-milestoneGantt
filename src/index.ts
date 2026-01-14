@@ -47,6 +47,8 @@ export interface MilestoneGanttConfig extends ToolConfig {
 export interface MilestoneGanttData {
   creator?: MilestoneGanttUserLabel;
   viewMode?: MilestoneGanttViewMode;
+  projectFilters?: string[]; // 空数组/未设置表示“全部项目”
+  peopleFilters?: string[]; // 空数组/未设置表示“全部人员”
 }
 
 type MilestoneItem = {
@@ -90,6 +92,20 @@ function splitPeople(txt: string): string[] {
     if (seen.has(p)) continue;
     seen.add(p);
     out.push(p);
+  }
+  return out;
+}
+
+function safeStringArray(v: any): string[] {
+  const arr = Array.isArray(v) ? v : [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const x of arr) {
+    const s = typeof x === 'string' ? x.trim() : '';
+    if (!s) continue;
+    if (seen.has(s)) continue;
+    seen.add(s);
+    out.push(s);
   }
   return out;
 }
@@ -154,8 +170,25 @@ export default class MilestoneGantt implements BlockTool {
   private metaEl?: HTMLElement;
   private loadingEl?: HTMLElement;
 
+  private projectFilterBtn?: HTMLButtonElement;
+  private peopleFilterBtn?: HTMLButtonElement;
+  private projectFilterValueEl?: HTMLElement;
+  private peopleFilterValueEl?: HTMLElement;
+
+  private filterChooserEl?: HTMLElement;
+  private filterChooserTitleEl?: HTMLElement;
+  private filterChooserListEl?: HTMLElement;
+  private filterChooserMode: 'project' | 'people' | null = null;
+  private removeFilterChooserListeners?: () => void;
+
+  private availableProjects: string[] = [];
+  private availablePeople: string[] = [];
+  private selectedProjectFilters: string[] = []; // 空数组表示“全部项目”
+  private selectedPeopleFilters: string[] = []; // 空数组表示“全部人员”
+
   private dayW = 18;
   private lastItems: MilestoneItem[] = [];
+  private rawItems: MilestoneItem[] = [];
 
   private removePanZoomListeners?: () => void;
 
@@ -174,6 +207,8 @@ export default class MilestoneGantt implements BlockTool {
     return {
       creator: false as any,
       viewMode: false as any,
+      projectFilters: false as any,
+      peopleFilters: false as any,
     };
   }
 
@@ -186,6 +221,10 @@ export default class MilestoneGantt implements BlockTool {
     const creator = safeUserLabel((data as any)?.creator);
     const viewMode: MilestoneGanttViewMode = (data as any)?.viewMode === 'people' ? 'people' : 'project';
     this.data = { creator: creator || undefined, viewMode };
+
+    // 从数据中恢复筛选（空数组表示全部）
+    this.selectedProjectFilters = safeStringArray((data as any)?.projectFilters);
+    this.selectedPeopleFilters = safeStringArray((data as any)?.peopleFilters);
 
     // 自动写入 creator（仅首次缺失、且可编辑时）
     if (!this.readOnly && !this.data.creator) {
@@ -202,6 +241,41 @@ export default class MilestoneGantt implements BlockTool {
     const title = make('div', ['cdx-milestone-gantt__title']) as HTMLElement;
     title.textContent = this.api.i18n.t('里程碑甘特图');
     header.appendChild(title);
+
+    // 筛选栏（放在标题右侧）
+    const filters = make('div', ['cdx-milestone-gantt__filters']) as HTMLElement;
+    const canEdit = this.canEditFilters();
+
+    const buildFilter = (labelText: string) => {
+      const row = make('div', ['cdx-milestone-gantt__filter']) as HTMLElement;
+      const label = make('span', ['cdx-milestone-gantt__filterLabel']) as HTMLElement;
+      label.textContent = labelText;
+      const value = make('span', ['cdx-milestone-gantt__filterValue']) as HTMLElement;
+      const btn = make('button', ['cdx-milestone-gantt__chip', 'cdx-milestone-gantt__filterBtn'], { type: 'button' }) as HTMLButtonElement;
+      btn.textContent = this.api.i18n.t('选择');
+      if (!canEdit) {
+        btn.disabled = true;
+        btn.title = this.api.i18n.t('仅创建者可设置筛选');
+      }
+      row.appendChild(label);
+      row.appendChild(value);
+      row.appendChild(btn);
+      return { row, value, btn };
+    };
+
+    const pf = buildFilter(this.api.i18n.t('项目'));
+    this.projectFilterValueEl = pf.value;
+    this.projectFilterBtn = pf.btn;
+    pf.btn.addEventListener('click', () => this.openFilterChooser('project'));
+
+    const uf = buildFilter(this.api.i18n.t('人员'));
+    this.peopleFilterValueEl = uf.value;
+    this.peopleFilterBtn = uf.btn;
+    uf.btn.addEventListener('click', () => this.openFilterChooser('people'));
+
+    filters.appendChild(pf.row);
+    filters.appendChild(uf.row);
+    header.appendChild(filters);
 
     const spacer = make('div', ['cdx-milestone-gantt__spacer']) as HTMLElement;
     header.appendChild(spacer);
@@ -227,12 +301,14 @@ export default class MilestoneGantt implements BlockTool {
     btnProject.addEventListener('click', () => {
       this.data.viewMode = 'project';
       applyActive();
-      void this.refresh();
+      if (this.rawItems.length) this.updateChartFromRaw();
+      else void this.refresh();
     });
     btnPeople.addEventListener('click', () => {
       this.data.viewMode = 'people';
       applyActive();
-      void this.refresh();
+      if (this.rawItems.length) this.updateChartFromRaw();
+      else void this.refresh();
     });
     btnRefresh.addEventListener('click', () => void this.refresh());
 
@@ -240,6 +316,38 @@ export default class MilestoneGantt implements BlockTool {
     header.appendChild(btnPeople);
     header.appendChild(btnRefresh);
     wrap.appendChild(header);
+
+    // 筛选弹层
+    wrap.appendChild(this.buildFilterChooser());
+
+    // 点击块外关闭筛选弹层
+    if (this.removeFilterChooserListeners) {
+      this.removeFilterChooserListeners();
+      this.removeFilterChooserListeners = undefined;
+    }
+    const onDocPointerDown = (e: PointerEvent) => {
+      if (!this.wrapper) return;
+      const t = e.target as any;
+      if (!t) return;
+
+      // 点击在块外：关闭
+      if (!this.wrapper.contains(t)) {
+        this.closeFilterChooser();
+        return;
+      }
+
+      // 点击在弹层内：不处理
+      if (this.filterChooserEl && this.filterChooserEl.contains(t)) return;
+
+      // 点击在触发按钮上：不处理（由按钮 click 负责切换）
+      if (this.projectFilterBtn && this.projectFilterBtn.contains(t)) return;
+      if (this.peopleFilterBtn && this.peopleFilterBtn.contains(t)) return;
+
+      // 点击块内其他区域：关闭
+      this.closeFilterChooser();
+    };
+    document.addEventListener('pointerdown', onDocPointerDown);
+    this.removeFilterChooserListeners = () => document.removeEventListener('pointerdown', onDocPointerDown);
 
     const grid = make('div', ['cdx-milestone-gantt__grid']) as HTMLElement;
 
@@ -283,6 +391,9 @@ export default class MilestoneGantt implements BlockTool {
     // 初次渲染拉取数据
     void this.refresh();
 
+    // 初始化筛选显示文案
+    this.refreshFilterValueUI();
+
     return wrap;
   }
 
@@ -290,6 +401,8 @@ export default class MilestoneGantt implements BlockTool {
     return {
       creator: this.data.creator,
       viewMode: this.data.viewMode || 'project',
+      projectFilters: this.selectedProjectFilters.slice(),
+      peopleFilters: this.selectedPeopleFilters.slice(),
     };
   }
 
@@ -297,8 +410,179 @@ export default class MilestoneGantt implements BlockTool {
     if (!savedData || typeof savedData !== 'object') return false;
     const vm = (savedData as any).viewMode;
     if (vm && vm !== 'project' && vm !== 'people') return false;
+    const pf = (savedData as any).projectFilters;
+    const uf = (savedData as any).peopleFilters;
+    if (typeof pf !== 'undefined' && !Array.isArray(pf)) return false;
+    if (typeof uf !== 'undefined' && !Array.isArray(uf)) return false;
+    if (Array.isArray(pf) && pf.some(x => typeof x !== 'string')) return false;
+    if (Array.isArray(uf) && uf.some(x => typeof x !== 'string')) return false;
     // creator 由后端强校验；前端允许为空（首次插入时会补）
     return true;
+  }
+
+  private canEditFilters(): boolean {
+    if (this.readOnly) return false;
+    const creator = this.data.creator;
+    const me = this.getCurrentUser();
+    if (!creator || !me) return false;
+    return creator.id === me.id;
+  }
+
+  private buildFilterChooser(): HTMLElement {
+    const chooser = make('div', ['cdx-milestone-gantt__chooser']) as HTMLElement;
+    this.filterChooserEl = chooser;
+
+    const header = make('div', ['cdx-milestone-gantt__chooserHeader']) as HTMLElement;
+    const title = make('div', ['cdx-milestone-gantt__chooserTitle']) as HTMLElement;
+    title.textContent = this.api.i18n.t('筛选');
+    this.filterChooserTitleEl = title;
+    const spacer = make('div', ['cdx-milestone-gantt__chooserSpacer']) as HTMLElement;
+    const close = make('button', ['cdx-milestone-gantt__chooserClose'], { type: 'button' }) as HTMLButtonElement;
+    close.textContent = this.api.i18n.t('关闭');
+    close.addEventListener('click', () => this.closeFilterChooser());
+    header.appendChild(title);
+    header.appendChild(spacer);
+    header.appendChild(close);
+    chooser.appendChild(header);
+
+    const list = make('div', ['cdx-milestone-gantt__chooserList']) as HTMLElement;
+    this.filterChooserListEl = list;
+    chooser.appendChild(list);
+
+    return chooser;
+  }
+
+  private openFilterChooser(mode: 'project' | 'people') {
+    if (!this.filterChooserEl || !this.filterChooserTitleEl || !this.filterChooserListEl) return;
+    if (!this.canEditFilters()) return;
+
+    // 再次点击同一模式：关闭
+    if (this.filterChooserMode === mode) {
+      this.closeFilterChooser();
+      return;
+    }
+
+    this.filterChooserMode = mode;
+    this.filterChooserEl.classList.add('is-open');
+    this.filterChooserEl.dataset.mode = mode;
+    this.updateFilterBtnStates();
+
+    // 定位到触发按钮下方
+    const anchor = mode === 'project' ? this.projectFilterBtn : this.peopleFilterBtn;
+    if (anchor && this.wrapper) {
+      try {
+        const btnRect = anchor.getBoundingClientRect();
+        const wrapRect = this.wrapper.getBoundingClientRect();
+        const top = Math.max(0, Math.round(btnRect.bottom - wrapRect.top + 8));
+        this.filterChooserEl.style.top = `${top}px`;
+      } catch (_) {
+        this.filterChooserEl.style.top = '';
+      }
+    }
+
+    this.renderFilterChooser();
+  }
+
+  private closeFilterChooser() {
+    if (!this.filterChooserEl) return;
+    this.filterChooserEl.classList.remove('is-open');
+    try { delete (this.filterChooserEl as any).dataset.mode; } catch (_) {}
+    this.filterChooserMode = null;
+    this.updateFilterBtnStates();
+  }
+
+  private updateFilterBtnStates() {
+    const isOpen = !!this.filterChooserMode;
+    if (this.wrapper) {
+      if (isOpen) this.wrapper.classList.add('is-active');
+      else this.wrapper.classList.remove('is-active');
+    }
+    if (this.projectFilterBtn) {
+      if (this.filterChooserMode === 'project') this.projectFilterBtn.classList.add('is-active');
+      else this.projectFilterBtn.classList.remove('is-active');
+    }
+    if (this.peopleFilterBtn) {
+      if (this.filterChooserMode === 'people') this.peopleFilterBtn.classList.add('is-active');
+      else this.peopleFilterBtn.classList.remove('is-active');
+    }
+  }
+
+  private renderFilterChooser() {
+    if (!this.filterChooserTitleEl || !this.filterChooserListEl) return;
+    if (!this.filterChooserMode) return;
+
+    const mode = this.filterChooserMode;
+    const isProject = mode === 'project';
+    const allText = isProject ? this.api.i18n.t('全部项目') : this.api.i18n.t('全部人员');
+    const titleText = isProject ? this.api.i18n.t('筛选项目') : this.api.i18n.t('筛选人员');
+    this.filterChooserTitleEl.textContent = titleText;
+
+    const values = isProject ? this.availableProjects : this.availablePeople;
+    const selected = isProject ? this.selectedProjectFilters : this.selectedPeopleFilters;
+    const selectedSet = new Set(selected);
+
+    this.filterChooserListEl.innerHTML = '';
+
+    const makeItem = (text: string, selected: boolean, onClick: () => void) => {
+      const item = make('div', ['cdx-milestone-gantt__chooserItem']) as HTMLElement;
+      item.textContent = text;
+      if (selected) item.classList.add('is-selected');
+      item.addEventListener('click', onClick);
+      return item;
+    };
+
+    // “全部”
+    this.filterChooserListEl.appendChild(
+      makeItem(allText, selected.length === 0, () => {
+        if (!this.canEditFilters()) return;
+        if (isProject) this.selectedProjectFilters = [];
+        else this.selectedPeopleFilters = [];
+        this.persistFiltersToDataIfAllowed();
+        this.refreshFilterValueUI();
+        this.renderFilterChooser();
+        this.updateChartFromRaw();
+      })
+    );
+
+    for (const v of values) {
+      this.filterChooserListEl.appendChild(
+        makeItem(v, selectedSet.has(v), () => {
+          if (!this.canEditFilters()) return;
+          const next = new Set(isProject ? this.selectedProjectFilters : this.selectedPeopleFilters);
+          if (next.has(v)) next.delete(v);
+          else next.add(v);
+          const list = Array.from(next.values()).sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
+          if (isProject) this.selectedProjectFilters = list;
+          else this.selectedPeopleFilters = list;
+          this.persistFiltersToDataIfAllowed();
+          this.refreshFilterValueUI();
+          this.renderFilterChooser();
+          this.updateChartFromRaw();
+        })
+      );
+    }
+  }
+
+  private persistFiltersToDataIfAllowed() {
+    if (!this.canEditFilters()) return;
+    this.data.projectFilters = this.selectedProjectFilters.slice();
+    this.data.peopleFilters = this.selectedPeopleFilters.slice();
+  }
+
+  private refreshFilterValueUI() {
+    const fmt = (allText: string, selected: string[]) => {
+      if (selected.length === 0) return allText;
+      if (selected.length <= 3) return selected.join('、');
+      return `${selected.slice(0, 3).join('、')}…(+${selected.length - 3})`;
+    };
+    if (this.projectFilterValueEl) {
+      this.projectFilterValueEl.textContent = fmt(this.api.i18n.t('全部项目'), this.selectedProjectFilters);
+      this.projectFilterValueEl.title = this.selectedProjectFilters.length ? this.selectedProjectFilters.join('、') : this.api.i18n.t('全部项目');
+    }
+    if (this.peopleFilterValueEl) {
+      this.peopleFilterValueEl.textContent = fmt(this.api.i18n.t('全部人员'), this.selectedPeopleFilters);
+      this.peopleFilterValueEl.title = this.selectedPeopleFilters.length ? this.selectedPeopleFilters.join('、') : this.api.i18n.t('全部人员');
+    }
   }
 
   private getCurrentUser(): MilestoneGanttUserLabel | null {
@@ -489,7 +773,87 @@ export default class MilestoneGantt implements BlockTool {
       offset += pageSize;
     }
 
-    this.renderChart(all);
+    this.rawItems = all.slice();
+    this.rebuildFilterOptions();
+    this.updateChartFromRaw();
+  }
+
+  private normalizeProjectName(it: MilestoneItem): string {
+    return it.projectName || this.api.i18n.t('未命名项目');
+  }
+
+  private normalizePeople(it: MilestoneItem): string[] {
+    return it.people && it.people.length ? it.people : [this.api.i18n.t('未指定人员')];
+  }
+
+  private applyFilters(items: MilestoneItem[]): MilestoneItem[] {
+    const pSel = this.selectedProjectFilters;
+    const uSel = this.selectedPeopleFilters;
+    return items.filter(it => {
+      if (pSel.length > 0 && !pSel.includes(this.normalizeProjectName(it))) return false;
+      if (uSel.length > 0) {
+        const ps = this.normalizePeople(it);
+        let ok = false;
+        for (const p of ps) {
+          if (uSel.includes(p)) {
+            ok = true;
+            break;
+          }
+        }
+        if (!ok) return false;
+      }
+      return true;
+    });
+  }
+
+  private rebuildFilterOptions() {
+    const allProjects = new Set<string>();
+    const allPeople = new Set<string>();
+    for (const it of this.rawItems) {
+      allProjects.add(this.normalizeProjectName(it));
+      for (const p of this.normalizePeople(it)) allPeople.add(p);
+    }
+
+    const projects = Array.from(allProjects).sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
+    const people = Array.from(allPeople).sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
+
+    this.availableProjects = projects;
+    this.availablePeople = people;
+
+    // 选项变化后，裁剪掉已经不存在的已选项；如果裁剪后为空则视为“全部”
+    const pSet = new Set(projects);
+    const uSet = new Set(people);
+    this.selectedProjectFilters = this.selectedProjectFilters.filter(x => pSet.has(x));
+    this.selectedPeopleFilters = this.selectedPeopleFilters.filter(x => uSet.has(x));
+
+    this.persistFiltersToDataIfAllowed();
+    this.refreshFilterValueUI();
+
+    // 如果弹层打开，实时刷新列表
+    if (this.filterChooserMode) {
+      this.renderFilterChooser();
+    }
+  }
+
+  private updateChartFromRaw() {
+    const filtered = this.applyFilters(this.rawItems);
+    if (this.rawItems.length > 0 && filtered.length === 0) {
+      this.setLoading(this.api.i18n.t('无匹配数据'));
+      this.lastItems = [];
+      this.renderEmptySvg(this.api.i18n.t('无匹配数据'));
+      // meta（条目数）仍然按 0 展示
+      if (this.metaEl) {
+        const creator = this.data.creator;
+        const cLabel = creator && creator.label ? creator.label : this.api.i18n.t('未设置');
+        this.metaEl.innerHTML = '';
+        const a = make('span', [], { innerHTML: `${this.api.i18n.t('创建人')}: <b>${this.escapeHtml(cLabel)}</b>` });
+        const b = make('span', [], { innerHTML: `${this.api.i18n.t('条目')}: <b>0</b>` });
+        this.metaEl.appendChild(a);
+        this.metaEl.appendChild(b);
+      }
+      return;
+    }
+    this.renderChart(filtered);
   }
 
   private renderEmptySvg(text: string) {
@@ -579,7 +943,7 @@ export default class MilestoneGantt implements BlockTool {
     if (this.data.viewMode === 'project') {
       const byProject = new Map<string, MilestoneItem[]>();
       for (const it of items) {
-        const key = it.projectName || this.api.i18n.t('未命名项目');
+        const key = this.normalizeProjectName(it);
         if (!byProject.has(key)) byProject.set(key, []);
         byProject.get(key)!.push(it);
       }
@@ -594,7 +958,7 @@ export default class MilestoneGantt implements BlockTool {
     } else {
       const byPerson = new Map<string, MilestoneItem[]>();
       for (const it of items) {
-        const ps = it.people.length ? it.people : [this.api.i18n.t('未指定人员')];
+        const ps = this.normalizePeople(it);
         for (const p of ps) {
           if (!byPerson.has(p)) byPerson.set(p, []);
           byPerson.get(p)!.push(it);
@@ -664,6 +1028,21 @@ export default class MilestoneGantt implements BlockTool {
       rect.setAttribute('width', String(dayW));
       rect.setAttribute('height', String(h));
       rect.setAttribute('fill', weekendFill);
+      addRight(rect);
+    }
+
+    // 当前日期指示：对“今天所在列”增加背景色
+    const now = new Date();
+    const todayKey = now.getFullYear() * 10000 + (now.getMonth() + 1) * 100 + now.getDate();
+    const todayIdx = days.indexOf(todayKey);
+    if (todayIdx >= 0) {
+      const x = todayIdx * dayW;
+      const rect = document.createElementNS(svgNS, 'rect');
+      rect.setAttribute('x', String(x));
+      rect.setAttribute('y', '0');
+      rect.setAttribute('width', String(dayW));
+      rect.setAttribute('height', String(h));
+      rect.setAttribute('fill', 'rgba(250, 204, 21, .22)'); // 轻微高亮
       addRight(rect);
     }
 
@@ -802,6 +1181,18 @@ export default class MilestoneGantt implements BlockTool {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
+  }
+
+  destroy() {
+    // 清理文档级事件监听，避免内存泄漏
+    if (this.removePanZoomListeners) {
+      this.removePanZoomListeners();
+      this.removePanZoomListeners = undefined;
+    }
+    if (this.removeFilterChooserListeners) {
+      this.removeFilterChooserListeners();
+      this.removeFilterChooserListeners = undefined;
+    }
   }
 }
 

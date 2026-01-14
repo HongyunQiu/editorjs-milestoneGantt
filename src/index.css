@@ -46,6 +46,147 @@
   flex: 1 1 auto;
 }
 
+.cdx-milestone-gantt__filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.cdx-milestone-gantt__filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--mg-muted);
+  user-select: none;
+}
+
+.cdx-milestone-gantt__filterLabel {
+  white-space: nowrap;
+}
+
+.cdx-milestone-gantt__filterValue {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--mg-text);
+}
+
+.cdx-milestone-gantt__filterBtn {
+  padding: 2px 8px;
+}
+
+.cdx-milestone-gantt.is-active {
+  z-index: 100;
+}
+
+.cdx-milestone-gantt__chooser {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: 46px; /* 默认值，打开时会被 JS 覆盖为按钮下方 */
+  z-index: 1000;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  padding: 10px 10px 8px;
+  max-height: min(420px, 50vh);
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: none;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.cdx-milestone-gantt__chooser.is-open {
+  display: block;
+}
+
+.cdx-milestone-gantt__chooserHeader {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.cdx-milestone-gantt__chooserTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: #0f172a;
+  user-select: none;
+}
+
+.cdx-milestone-gantt__chooserSpacer {
+  flex: 1;
+}
+
+.cdx-milestone-gantt__chooserClose {
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #334155;
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.cdx-milestone-gantt__chooserList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+}
+
+.cdx-milestone-gantt__chooserItem {
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  border-radius: 999px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #0f172a;
+  user-select: none;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cdx-milestone-gantt__chooserItem:hover {
+  background: #f1f5f9;
+}
+
+.cdx-milestone-gantt__chooserItem.is-selected {
+  border-color: #38bdf8;
+  background: #e0f2fe;
+}
+
+.cdx-milestone-gantt__select {
+  border: 1px solid var(--mg-chip-border);
+  background: #ffffff;
+  color: #075985;
+  border-radius: 10px;
+  padding: 4px 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  max-width: 220px;
+}
+
+.cdx-milestone-gantt__select:disabled {
+  opacity: .65;
+  cursor: not-allowed;
+  background: #f8fafc;
+}
+
+.cdx-milestone-gantt__select:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(2, 132, 199, .18);
+}
+
 .cdx-milestone-gantt__chip {
   border: 1px solid var(--mg-chip-border);
   background: var(--mg-chip-bg);
