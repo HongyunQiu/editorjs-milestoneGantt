@@ -2,19 +2,54 @@
 .cdx-milestone-gantt {
   margin: 0;
   position: relative;
-  border: 1px solid var(--mg-border, #bae6fd);
-  background: var(--mg-bg, #f0f9ff);
-  border-radius: 10px;
-  padding: 10px 12px 12px;
-  --mg-accent: #0284c7;
-  --mg-text: #0f172a;
-  --mg-muted: #475569;
+  /* 与 QNotes 全局主题变量对齐（带 fallback，脱离 QNotes 也可用） */
+  --mg-surface: var(--surface, #ffffff);
+  --mg-surface-muted: var(--surface-muted, #f0f9ff);
+  --mg-border: var(--border, #bae6fd);
+  --mg-text: var(--text, #0f172a);
+  --mg-muted: var(--text-muted, #475569);
+  --mg-accent: var(--primary, #0284c7);
+  --mg-control-bg: var(--control-bg, #f8fafc);
+  --mg-control-hover: var(--control-bg-hover, #f1f5f9);
+  --mg-control-text: var(--control-text, #334155);
+
+  /* 工具内部细分颜色（默认浅色） */
   --mg-chip-bg: #e0f2fe;
   --mg-chip-border: #7dd3fc;
+  --mg-grid-bg: var(--mg-surface, #ffffff);
+  --mg-grid-border: rgba(2, 132, 199, .18);
+  --mg-grid-hline: rgba(15, 23, 42, .06);
+  --mg-grid-vline: rgba(2, 132, 199, .10);
+  --mg-sep-line: rgba(15, 23, 42, .08);
+  --mg-weekend-bg: rgba(148, 163, 184, .14);
+  --mg-today-bg: rgba(250, 204, 21, .22);
+  --mg-bar-completed: #10b981;
+  --mg-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  --mg-scrollbar-thumb: #cbd5e1;
+
+  border: 1px solid var(--mg-border);
+  background: var(--mg-surface-muted);
+  border-radius: 10px;
+  padding: 10px 12px 12px;
+  color: var(--mg-text);
   box-sizing: border-box;
   max-width: 100%;
   min-width: 0;
   overflow-x: hidden; /* 缩放时避免把外层页面撑出横向滚动条 */
+}
+
+@media (prefers-color-scheme: dark) {
+  .cdx-milestone-gantt {
+    /* 深色下微调：避免周末/今日背景过亮；同时增强网格线对比 */
+    --mg-grid-hline: rgba(226, 232, 240, .10);
+    --mg-grid-vline: rgba(56, 189, 248, .14);
+    --mg-sep-line: rgba(226, 232, 240, .14);
+    --mg-weekend-bg: rgba(148, 163, 184, .10);
+    --mg-today-bg: rgba(250, 204, 21, .16);
+    --mg-bar-completed: #34d399;
+    --mg-shadow: 0 18px 40px -14px rgba(0, 0, 0, 0.55);
+    --mg-scrollbar-thumb: rgba(148, 163, 184, .55);
+  }
 }
 
 .cdx-milestone-gantt:before {
@@ -89,9 +124,9 @@
   right: 12px;
   top: 46px; /* 默认值，打开时会被 JS 覆盖为按钮下方 */
   z-index: 1000;
-  background: #ffffff;
-  border: 1px solid #cbd5e1;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  background: var(--mg-surface, #ffffff);
+  border: 1px solid var(--mg-border, #cbd5e1);
+  box-shadow: var(--mg-shadow);
   border-radius: 8px;
   padding: 10px 10px 8px;
   max-height: min(420px, 50vh);
@@ -99,7 +134,7 @@
   overflow-x: hidden;
   display: none;
   scrollbar-width: thin;
-  scrollbar-color: #cbd5e1 transparent;
+  scrollbar-color: var(--mg-scrollbar-thumb, #cbd5e1) transparent;
 }
 
 .cdx-milestone-gantt__chooser.is-open {
@@ -116,7 +151,7 @@
 .cdx-milestone-gantt__chooserTitle {
   font-size: 12px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--mg-text, #0f172a);
   user-select: none;
 }
 
@@ -125,9 +160,9 @@
 }
 
 .cdx-milestone-gantt__chooserClose {
-  border: 1px solid #e2e8f0;
-  background: #f8fafc;
-  color: #334155;
+  border: 1px solid var(--mg-border, #e2e8f0);
+  background: var(--mg-control-bg, #f8fafc);
+  color: var(--mg-control-text, #334155);
   border-radius: 8px;
   padding: 4px 10px;
   font-size: 12px;
@@ -141,14 +176,14 @@
 }
 
 .cdx-milestone-gantt__chooserItem {
-  border: 1px solid #e2e8f0;
-  background: #ffffff;
+  border: 1px solid var(--mg-border, #e2e8f0);
+  background: var(--mg-surface, #ffffff);
   border-radius: 999px;
   padding: 6px 10px;
   cursor: pointer;
   font-size: 13px;
   line-height: 1.4;
-  color: #0f172a;
+  color: var(--mg-text, #0f172a);
   user-select: none;
   max-width: 100%;
   overflow: hidden;
@@ -157,18 +192,18 @@
 }
 
 .cdx-milestone-gantt__chooserItem:hover {
-  background: #f1f5f9;
+  background: var(--mg-control-hover, #f1f5f9);
 }
 
 .cdx-milestone-gantt__chooserItem.is-selected {
-  border-color: #38bdf8;
-  background: #e0f2fe;
+  border-color: var(--mg-accent, #38bdf8);
+  background: var(--mg-chip-bg, #e0f2fe);
 }
 
 .cdx-milestone-gantt__select {
   border: 1px solid var(--mg-chip-border);
-  background: #ffffff;
-  color: #075985;
+  background: var(--mg-surface, #ffffff);
+  color: var(--mg-accent, #075985);
   border-radius: 10px;
   padding: 4px 8px;
   font-size: 12px;
@@ -179,18 +214,19 @@
 .cdx-milestone-gantt__select:disabled {
   opacity: .65;
   cursor: not-allowed;
-  background: #f8fafc;
+  background: var(--mg-control-bg, #f8fafc);
 }
 
 .cdx-milestone-gantt__select:focus {
   outline: none;
   box-shadow: 0 0 0 2px rgba(2, 132, 199, .18);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--mg-accent, #0284c7) 18%, transparent);
 }
 
 .cdx-milestone-gantt__chip {
   border: 1px solid var(--mg-chip-border);
   background: var(--mg-chip-bg);
-  color: #075985;
+  color: var(--mg-accent, #075985);
   border-radius: 999px;
   padding: 2px 8px;
   font-size: 12px;
@@ -200,9 +236,12 @@
 }
 
 .cdx-milestone-gantt__chip.is-active {
+  /* fallback */
   background: #bae6fd;
-  border-color: var(--mg-accent);
-  color: #0369a1;
+  /* enhanced */
+  background: color-mix(in srgb, var(--mg-accent, #0284c7) 20%, var(--mg-surface, #ffffff));
+  border-color: var(--mg-accent, #0284c7);
+  color: var(--mg-accent, #0369a1);
 }
 
 .cdx-milestone-gantt__meta {
@@ -221,9 +260,9 @@
 
 .cdx-milestone-gantt__grid {
   width: 100%;
-  border: 1px solid rgba(2, 132, 199, .18);
+  border: 1px solid var(--mg-grid-border, rgba(2, 132, 199, .18));
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--mg-grid-bg, #ffffff);
   display: grid;
   grid-template-columns: 320px minmax(0, 1fr);
   min-height: 260px;
@@ -236,8 +275,8 @@
 .cdx-milestone-gantt__left {
   width: 320px;
   overflow: hidden; /* 左侧固定，不出现自己的滚动条 */
-  background: #ffffff;
-  border-right: 1px solid rgba(15, 23, 42, .06);
+  background: var(--mg-grid-bg, #ffffff);
+  border-right: 1px solid var(--mg-grid-hline, rgba(15, 23, 42, .06));
   position: relative;
 }
 
@@ -247,7 +286,7 @@
 
 .cdx-milestone-gantt__right {
   min-width: 0;
-  background: #ffffff;
+  background: var(--mg-grid-bg, #ffffff);
   overflow: hidden; /* 避免右侧内容溢出撑开 grid */
 }
 
