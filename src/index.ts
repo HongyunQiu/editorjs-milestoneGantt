@@ -155,6 +155,20 @@ function eachDayKey(minKey: number, maxKey: number): number[] {
   return out;
 }
 
+/**
+ * 从 wrapper 元素获取 CSS 变量值（支持主题切换）
+ */
+function getCssVar(wrapper: HTMLElement | null, varName: string, fallback: string): string {
+  if (!wrapper) return fallback;
+  try {
+    const style = window.getComputedStyle(wrapper);
+    const value = style.getPropertyValue(varName).trim();
+    return value || fallback;
+  } catch (_) {
+    return fallback;
+  }
+}
+
 export default class MilestoneGantt implements BlockTool {
   private api: API;
   private readOnly: boolean;
@@ -873,19 +887,22 @@ export default class MilestoneGantt implements BlockTool {
     this.svgRightEl.setAttribute('width', String(wRight));
     this.svgRightEl.setAttribute('height', String(h));
 
+    const svgBg = getCssVar(this.wrapper, '--mg-svg-bg', '#ffffff');
+    const svgText = getCssVar(this.wrapper, '--mg-svg-text', '#64748b');
+
     const svgNS = 'http://www.w3.org/2000/svg';
     const bg = document.createElementNS(svgNS, 'rect');
     bg.setAttribute('x', '0');
     bg.setAttribute('y', '0');
     bg.setAttribute('width', String(wRight));
     bg.setAttribute('height', String(h));
-    bg.setAttribute('fill', 'var(--mg-grid-bg, #ffffff)');
+    bg.setAttribute('fill', svgBg);
     this.svgRightEl.appendChild(bg);
 
     const t = document.createElementNS(svgNS, 'text');
     t.setAttribute('x', String(16));
     t.setAttribute('y', String(28));
-    t.setAttribute('fill', 'var(--mg-muted, #64748b)');
+    t.setAttribute('fill', svgText);
     t.setAttribute('font-size', '13');
     t.textContent = text;
     this.svgRightEl.appendChild(t);
@@ -991,6 +1008,19 @@ export default class MilestoneGantt implements BlockTool {
 
     const svgNS = 'http://www.w3.org/2000/svg';
 
+    // 获取 CSS 变量（支持主题切换）
+    const svgBg = getCssVar(this.wrapper, '--mg-svg-bg', '#ffffff');
+    const svgText = getCssVar(this.wrapper, '--mg-svg-text', '#64748b');
+    const svgTextPrimary = getCssVar(this.wrapper, '--mg-svg-text-primary', '#0f172a');
+    const svgTextSecondary = getCssVar(this.wrapper, '--mg-svg-text-secondary', '#475569');
+    const svgLine = getCssVar(this.wrapper, '--mg-svg-line', 'rgba(2, 132, 199, 0.10)');
+    const svgSeparator = getCssVar(this.wrapper, '--mg-svg-separator', 'rgba(15, 23, 42, 0.08)');
+    const svgGrid = getCssVar(this.wrapper, '--mg-svg-grid', 'rgba(15, 23, 42, 0.06)');
+    const svgWeekend = getCssVar(this.wrapper, '--mg-svg-weekend', 'rgba(148, 163, 184, 0.14)');
+    const svgToday = getCssVar(this.wrapper, '--mg-svg-today', 'rgba(250, 204, 21, 0.22)');
+    const svgBarCompleted = getCssVar(this.wrapper, '--mg-svg-bar-completed', '#10b981');
+    const svgBarActive = getCssVar(this.wrapper, '--mg-svg-bar-active', '#0284c7');
+
     const addLeft = (el: Element) => this.svgLeftEl!.appendChild(el);
     const addRight = (el: Element) => this.svgRightEl!.appendChild(el);
 
@@ -1000,7 +1030,7 @@ export default class MilestoneGantt implements BlockTool {
     bgLeft.setAttribute('y', '0');
     bgLeft.setAttribute('width', String(leftW));
     bgLeft.setAttribute('height', String(h));
-    bgLeft.setAttribute('fill', 'var(--mg-grid-bg, #ffffff)');
+    bgLeft.setAttribute('fill', svgBg);
     addLeft(bgLeft);
 
     const bgRight = document.createElementNS(svgNS, 'rect');
@@ -1008,12 +1038,11 @@ export default class MilestoneGantt implements BlockTool {
     bgRight.setAttribute('y', '0');
     bgRight.setAttribute('width', String(wRight));
     bgRight.setAttribute('height', String(h));
-    bgRight.setAttribute('fill', 'var(--mg-grid-bg, #ffffff)');
+    bgRight.setAttribute('fill', svgBg);
     addRight(bgRight);
 
     // 周末底色（周六/周日列淡色背景，用于区分工作日）
     // 注意：先画背景，再画网格线/条形，避免遮挡内容
-    const weekendFill = 'var(--mg-weekend-bg, rgba(148, 163, 184, .14))'; // slate-400, low opacity
     for (let i = 0; i < days.length; i++) {
       const ymd = ymdFromKey(days[i]);
       if (!ymd) continue;
@@ -1042,7 +1071,7 @@ export default class MilestoneGantt implements BlockTool {
       rect.setAttribute('y', '0');
       rect.setAttribute('width', String(dayW));
       rect.setAttribute('height', String(h));
-      rect.setAttribute('fill', 'var(--mg-today-bg, rgba(250, 204, 21, .22))'); // 轻微高亮
+      rect.setAttribute('fill', 'rgba(250, 204, 21, .22)'); // 轻微高亮
       addRight(rect);
     }
 
@@ -1052,14 +1081,14 @@ export default class MilestoneGantt implements BlockTool {
     sep.setAttribute('y1', '0');
     sep.setAttribute('x2', String(leftW - 0.5));
     sep.setAttribute('y2', String(h));
-    sep.setAttribute('stroke', 'var(--mg-sep-line, rgba(15, 23, 42, .08))');
+    sep.setAttribute('stroke', 'rgba(15, 23, 42, .08)');
     addLeft(sep);
 
     // 左侧表头（项目/人员 + 内容）
     const headerA = document.createElementNS(svgNS, 'text');
     headerA.setAttribute('x', '12');
     headerA.setAttribute('y', '18');
-    headerA.setAttribute('fill', 'var(--mg-muted, #64748b)');
+    headerA.setAttribute('fill', '#64748b');
     headerA.setAttribute('font-size', '11');
     headerA.setAttribute('font-weight', '600');
     headerA.textContent = this.data.viewMode === 'people' ? this.api.i18n.t('人员') : this.api.i18n.t('项目');
@@ -1068,7 +1097,7 @@ export default class MilestoneGantt implements BlockTool {
     const headerB = document.createElementNS(svgNS, 'text');
     headerB.setAttribute('x', '130');
     headerB.setAttribute('y', '18');
-    headerB.setAttribute('fill', 'var(--mg-muted, #64748b)');
+    headerB.setAttribute('fill', '#64748b');
     headerB.setAttribute('font-size', '11');
     headerB.setAttribute('font-weight', '600');
     headerB.textContent = this.api.i18n.t('内容');
@@ -1082,14 +1111,14 @@ export default class MilestoneGantt implements BlockTool {
       line.setAttribute('y1', String(topH - 6));
       line.setAttribute('x2', String(x));
       line.setAttribute('y2', String(h - 10));
-      line.setAttribute('stroke', 'var(--mg-grid-vline, rgba(2, 132, 199, .10))');
+      line.setAttribute('stroke', 'rgba(2, 132, 199, .10)');
       addRight(line);
 
       if (i === 0 || i === days.length - 1 || i % 7 === 0) {
         const t = document.createElementNS(svgNS, 'text');
         t.setAttribute('x', String(x + 2));
         t.setAttribute('y', String(18));
-        t.setAttribute('fill', 'var(--mg-muted, #64748b)');
+        t.setAttribute('fill', '#64748b');
         t.setAttribute('font-size', '11');
         const ymd = ymdFromKey(days[i]);
         t.textContent = ymd ? ymd.slice(5) : '';
@@ -1105,7 +1134,7 @@ export default class MilestoneGantt implements BlockTool {
       lineL.setAttribute('y1', String(y));
       lineL.setAttribute('x2', String(leftW));
       lineL.setAttribute('y2', String(y));
-      lineL.setAttribute('stroke', 'var(--mg-grid-hline, rgba(15, 23, 42, .06))');
+      lineL.setAttribute('stroke', 'rgba(15, 23, 42, .06)');
       addLeft(lineL);
 
       const lineR = document.createElementNS(svgNS, 'line');
@@ -1113,7 +1142,7 @@ export default class MilestoneGantt implements BlockTool {
       lineR.setAttribute('y1', String(y));
       lineR.setAttribute('x2', String(wRight));
       lineR.setAttribute('y2', String(y));
-      lineR.setAttribute('stroke', 'var(--mg-grid-hline, rgba(15, 23, 42, .06))');
+      lineR.setAttribute('stroke', 'rgba(15, 23, 42, .06)');
       addRight(lineR);
     }
 
@@ -1133,7 +1162,7 @@ export default class MilestoneGantt implements BlockTool {
       const label = document.createElementNS(svgNS, 'text');
       label.setAttribute('x', '12');
       label.setAttribute('y', String(yMid));
-      label.setAttribute('fill', isFirstInGroup ? 'var(--mg-text, #0f172a)' : 'var(--mg-muted, #475569)');
+      label.setAttribute('fill', isFirstInGroup ? '#0f172a' : '#475569');
       label.setAttribute('font-size', isFirstInGroup ? '12' : '11');
       label.setAttribute('font-weight', isFirstInGroup ? '700' : '400');
       label.textContent = isFirstInGroup ? row.group : '·';
@@ -1142,7 +1171,7 @@ export default class MilestoneGantt implements BlockTool {
       const sub = document.createElementNS(svgNS, 'text');
       sub.setAttribute('x', '130');
       sub.setAttribute('y', String(yMid));
-      sub.setAttribute('fill', 'var(--mg-text, #0f172a)');
+      sub.setAttribute('fill', '#0f172a');
       sub.setAttribute('font-size', '11');
       sub.textContent = row.label.length > 18 ? `${row.label.slice(0, 18)}…` : row.label;
       addLeft(sub);
@@ -1162,7 +1191,7 @@ export default class MilestoneGantt implements BlockTool {
       bar.setAttribute('width', String(Math.max(2, ex - sx)));
       bar.setAttribute('height', String(Math.max(10, rowH - 8)));
       bar.setAttribute('rx', '6');
-      bar.setAttribute('fill', it.completed ? 'var(--mg-bar-completed, #10b981)' : 'var(--mg-accent, #0284c7)');
+      bar.setAttribute('fill', it.completed ? '#10b981' : '#0284c7');
       bar.setAttribute('opacity', it.completed ? '0.55' : '0.85');
 
       const tip = document.createElementNS(svgNS, 'title');
